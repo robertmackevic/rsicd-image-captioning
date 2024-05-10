@@ -9,7 +9,7 @@ class Vocab:
     SOS_TOKEN = "<SOS>"
     EOS_TOKEN = "<EOS>"
 
-    def __init__(self, dataset: RSICD) -> None:
+    def __init__(self, data: RSICD) -> None:
         self.token_to_id = {}
         self.id_to_token = {}
 
@@ -20,7 +20,7 @@ class Vocab:
 
         frequencies = defaultdict(int)
 
-        for sample in dataset:
+        for sample in data:
             for caption in sample["captions"]:
                 for token in caption.split():
                     self._add_token(token)
