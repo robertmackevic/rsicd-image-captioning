@@ -7,13 +7,13 @@ from torch.utils.data import Dataset
 from torchrs.datasets import RSICD
 from torchvision.transforms import Compose, ToTensor, Resize
 
+from src.data.tokenizer import Tokenizer
 from src.paths import DATASET_DIR
-from src.tokenizer import Tokenizer
 
 
 class RSICDDataset(Dataset):
     def __init__(self, split: str) -> None:
-        super().__init__()
+        super(Dataset).__init__()
         self.data = RSICD(DATASET_DIR, split, Compose([Resize((224, 224)), ToTensor()]))
         self.tokenizer = Tokenizer(self.data)
 

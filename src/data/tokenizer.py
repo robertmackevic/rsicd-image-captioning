@@ -2,7 +2,7 @@ from typing import List
 
 from torchrs.datasets import RSICD
 
-from src.vocab import Vocab
+from src.data.vocab import Vocab
 
 
 class Tokenizer:
