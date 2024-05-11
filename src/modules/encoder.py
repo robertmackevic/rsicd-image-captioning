@@ -1,17 +1,16 @@
+from argparse import Namespace
+
 from torch import Tensor
 from torch.nn import Module, Sequential, AdaptiveAvgPool2d
-from torchvision.models import resnet101
-
-from src.utils import load_config
+from torchvision.models import resnet101, ResNet101_Weights
 
 
 class Encoder(Module):
-    def __init__(self) -> None:
+    def __init__(self, config: Namespace) -> None:
         super(Encoder, self).__init__()
-        config = load_config()
 
         # Remove linear and pool layers (since we're not doing classification)
-        self.resnet = Sequential(*list(resnet101(pretrained=True).children())[:-2])
+        self.resnet = Sequential(*list(resnet101(weights=ResNet101_Weights.DEFAULT, progress=False).children())[:-2])
 
         # Resize image to fixed size to allow input images of variable size
         self.adaptive_pool = AdaptiveAvgPool2d(config.encoded_image_size)
@@ -22,7 +21,7 @@ class Encoder(Module):
         # If fine-tuning, only fine-tune convolutional blocks 2 through 4
         if config.finetune_encoder:
             for layer in list(self.resnet.children())[5:]:
-                for param, in layer.parameters():
+                for param in layer.parameters():
                     param.requires_grad = True
 
     def forward(self, images: Tensor) -> Tensor:

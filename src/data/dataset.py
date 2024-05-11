@@ -1,44 +1,33 @@
-from typing import Tuple, List
+from argparse import Namespace
+from typing import Tuple
 
-import torch
-from torch import Tensor
-from torch.nn import functional
+from torch import Tensor, LongTensor
 from torch.utils.data import Dataset
 from torchrs.datasets import RSICD
 from torchvision.transforms import Compose, ToTensor, Resize
 
 from src.data.tokenizer import Tokenizer
+from src.data.vocab import Vocab
 from src.paths import DATASET_DIR
-from src.utils import load_config
 
 
 class RSICDDataset(Dataset):
-    def __init__(self, split: str) -> None:
-        super(Dataset).__init__()
-        config = load_config()
+    def __init__(self, config: Namespace, tokenizer: Tokenizer, split: str) -> None:
+        super(Dataset, self).__init__()
         self.data = RSICD(DATASET_DIR, split, Compose([Resize(config.image_size), ToTensor()]))
-        self.tokenizer = Tokenizer(self.data)
+        self.tokenizer = tokenizer
 
     def __len__(self) -> int:
         return len(self.data)
 
-    def __getitem__(self, index: int) -> Tuple[Tensor, Tensor]:
+    def __getitem__(self, index: int) -> Tuple[Tensor, Tensor, Tensor]:
         image = self.data[index]["x"]
         encoded_captions = [self.tokenizer.encode(caption) for caption in self.data[index]["captions"]]
-        max_tokens = len(max(encoded_captions, key=len))
+        caption_lengths = [len(caption) for caption in encoded_captions]
+        max_length = max(caption_lengths)
+
         encoded_and_padded_captions = Tensor([
-            encoded + [self.tokenizer.pad_id] * (max_tokens - len(encoded))
+            encoded + [Vocab.PAD_ID] * (max_length - len(encoded))
             for encoded in encoded_captions
         ])
-        return image, encoded_and_padded_captions
-
-    def collate_fn(self, batch: List[Tensor]) -> Tuple[Tensor, Tensor]:
-        images, captions_batch = zip(*batch)
-        max_caption_length = max(caption.size(1) for caption in captions_batch)
-
-        padded_captions_batch = torch.stack([
-            functional.pad(captions, (0, max_caption_length - captions.size(1)), value=self.tokenizer.pad_id)
-            for captions in captions_batch
-        ], dim=0)
-
-        return torch.stack(images, dim=0), padded_captions_batch
+        return image, encoded_and_padded_captions, LongTensor(caption_lengths)

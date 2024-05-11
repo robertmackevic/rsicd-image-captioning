@@ -1,3 +1,4 @@
+from argparse import Namespace
 from typing import Tuple
 
 import torch
@@ -5,20 +6,19 @@ from torch import Tensor
 from torch.nn import Module, Embedding, Dropout, LSTMCell, Linear, Sigmoid
 
 from src.modules.attention import Attention
-from src.utils import get_available_device, load_config
+from src.utils import get_available_device
 
 
 class Decoder(Module):
-    def __init__(self, vocab_size: int) -> None:
-        super(Decoder).__init__()
-        config = load_config()
+    def __init__(self, config: Namespace) -> None:
+        super(Decoder, self).__init__()
         self.device = get_available_device()
         self.encoder_dim = config.encoder_dim
-        self.vocab_size = vocab_size
+        self.vocab_size = config.vocab_size
 
         self.attention = Attention(self.encoder_dim, config.decoder_dim, config.attention_dim)
 
-        self.embedding = Embedding(vocab_size, config.embedding_dim)
+        self.embedding = Embedding(self.vocab_size, config.embedding_dim)
         self.dropout = Dropout(p=config.dropout)
 
         self.decode_step = LSTMCell(config.embedding_dim + self.encoder_dim, config.decoder_dim, bias=True)
@@ -33,7 +33,7 @@ class Decoder(Module):
         self.sigmoid = Sigmoid()
 
         # linear layer to find scores over vocabulary
-        self.fc = Linear(config.decoder_dim, vocab_size)
+        self.fc = Linear(config.decoder_dim, self.vocab_size)
         self._init_weights()
 
     def _init_weights(self) -> None:
@@ -53,25 +53,30 @@ class Decoder(Module):
         cell_state = self.init_c(mean_encoder_out)
         return hidden_state, cell_state
 
-    def forward(self, encoder_out: Tensor, encoded_captions: Tensor, caption_lengths: Tensor):
+    def forward(
+            self,
+            encoder_output: Tensor,
+            encoded_captions: Tensor,
+            caption_lengths: Tensor
+    ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         """
-        :param encoder_out: encoded images (batch_size, enc_image_size, enc_image_size, encoder_dim)
+        :param encoder_output: encoded images (batch_size, enc_image_size, enc_image_size, encoder_dim)
         :param encoded_captions: encoded captions (batch_size, max_caption_length)
         :param caption_lengths: caption lengths (batch_size, 1)
-        :return: scores for vocabulary, sorted encoded captions, decode lengths, weights, sort indices
+        :return: predictions, sorted encoded captions, decode lengths, weights, sort indices
         """
 
-        batch_size = encoder_out.size(0)
+        batch_size = encoder_output.size(0)
         vocab_size = self.vocab_size
 
-        encoder_out = encoder_out.view(batch_size, -1, self.encoder_dim)
+        encoder_out = encoder_output.view(batch_size, -1, self.encoder_dim)
         # (batch_size, num_pixels, encoder_dim)
         num_pixels = encoder_out.size(1)
 
         # Sort input data by decreasing lengths; why? apparent below
-        caption_lengths, sort_ind = caption_lengths.squeeze(1).sort(dim=0, descending=True)
-        encoder_out = encoder_out[sort_ind]
-        encoded_captions = encoded_captions[sort_ind]
+        caption_lengths, sort_idx = caption_lengths.squeeze(1).sort(dim=0, descending=True)
+        encoder_out = encoder_out[sort_idx]
+        encoded_captions = encoded_captions[sort_idx]
 
         embeddings = self.embedding(encoded_captions)
         # (batch_size, max_caption_length, embedding_dim)
@@ -111,4 +116,4 @@ class Decoder(Module):
             predictions[:batch_size_t, t, :] = pred
             alphas[:batch_size_t, t, :] = alpha
 
-        return predictions, encoded_captions, decode_lengths, alphas, sort_ind
+        return predictions, encoded_captions, decode_lengths, alphas, sort_idx

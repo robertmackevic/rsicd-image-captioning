@@ -1,4 +1,4 @@
-from collections import defaultdict
+from typing import Dict
 
 from torchrs.datasets import RSICD
 
@@ -8,31 +8,33 @@ class Vocab:
     UNK_TOKEN = "<UNK>"
     SOS_TOKEN = "<SOS>"
     EOS_TOKEN = "<EOS>"
+    PAD_ID = 0
+    UNK_ID = 1
+    SOS_ID = 2
+    EOS_ID = 3
 
-    def __init__(self, data: RSICD) -> None:
-        self.token_to_id = {}
-        self.id_to_token = {}
+    def __init__(self, token_to_id: Dict[str, int]) -> None:
+        self.token_to_id = token_to_id
+        self.id_to_token = {value: key for key, value in token_to_id.items()}
 
-        self._add_token(self.PAD_TOKEN)
-        self._add_token(self.UNK_TOKEN)
-        self._add_token(self.SOS_TOKEN)
-        self._add_token(self.EOS_TOKEN)
-
-        frequencies = defaultdict(int)
+    @classmethod
+    def init_from_data(cls, data: RSICD) -> "Vocab":
+        token_to_id = {
+            Vocab.PAD_TOKEN: Vocab.PAD_ID,
+            Vocab.UNK_TOKEN: Vocab.UNK_ID,
+            Vocab.SOS_TOKEN: Vocab.SOS_ID,
+            Vocab.EOS_TOKEN: Vocab.EOS_ID,
+        }
 
         for sample in data:
             for caption in sample["captions"]:
                 for token in caption.split():
-                    self._add_token(token)
-                    frequencies[token] += 1
 
-        self.frequencies = sorted(frequencies.items(), key=lambda item: item[1], reverse=True)
+                    if token not in token_to_id:
+                        token_id = len(token_to_id)
+                        token_to_id[token] = token_id
+
+        return cls(token_to_id)
 
     def __len__(self) -> int:
         return len(self.token_to_id)
-
-    def _add_token(self, token: str) -> None:
-        if token not in self.token_to_id:
-            token_idx = len(self)
-            self.token_to_id[token] = token_idx
-            self.id_to_token[token_idx] = token
