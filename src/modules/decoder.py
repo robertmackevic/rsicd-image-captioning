@@ -5,38 +5,35 @@ from torch import Tensor
 from torch.nn import Module, Embedding, Dropout, LSTMCell, Linear, Sigmoid
 
 from src.modules.attention import Attention
-from src.utils import get_available_device
+from src.utils import get_available_device, load_config
 
 
 class Decoder(Module):
-    def __init__(self, attention_dim, embed_dim, decoder_dim, vocab_size, encoder_dim=2048, dropout=0.5) -> None:
+    def __init__(self, vocab_size: int) -> None:
         super(Decoder).__init__()
+        config = load_config()
         self.device = get_available_device()
-        self.encoder_dim = encoder_dim
-        self.attention_dim = attention_dim
-        self.embed_dim = embed_dim
-        self.decoder_dim = decoder_dim
+        self.encoder_dim = config.encoder_dim
         self.vocab_size = vocab_size
-        self.dropout = dropout
 
-        self.attention = Attention(encoder_dim, decoder_dim, attention_dim)
+        self.attention = Attention(self.encoder_dim, config.decoder_dim, config.attention_dim)
 
-        self.embedding = Embedding(vocab_size, embed_dim)
-        self.dropout = Dropout(p=self.dropout)
+        self.embedding = Embedding(vocab_size, config.embedding_dim)
+        self.dropout = Dropout(p=config.dropout)
 
-        self.decode_step = LSTMCell(embed_dim + encoder_dim, decoder_dim, bias=True)
+        self.decode_step = LSTMCell(config.embedding_dim + self.encoder_dim, config.decoder_dim, bias=True)
 
         # linear layer to find initial hidden state of LSTMCell
-        self.init_h = Linear(encoder_dim, decoder_dim)
+        self.init_h = Linear(self.encoder_dim, config.decoder_dim)
         # linear layer to find initial cell state of LSTMCell
-        self.init_c = Linear(encoder_dim, decoder_dim)
+        self.init_c = Linear(self.encoder_dim, config.decoder_dim)
         # linear layer to create a sigmoid-activated gate
-        self.f_beta = Linear(decoder_dim, encoder_dim)
+        self.f_beta = Linear(config.decoder_dim, self.encoder_dim)
 
         self.sigmoid = Sigmoid()
 
         # linear layer to find scores over vocabulary
-        self.fc = Linear(decoder_dim, vocab_size)
+        self.fc = Linear(config.decoder_dim, vocab_size)
         self._init_weights()
 
     def _init_weights(self) -> None:
@@ -65,10 +62,9 @@ class Decoder(Module):
         """
 
         batch_size = encoder_out.size(0)
-        encoder_dim = encoder_out.size(-1)
         vocab_size = self.vocab_size
 
-        encoder_out = encoder_out.view(batch_size, -1, encoder_dim)
+        encoder_out = encoder_out.view(batch_size, -1, self.encoder_dim)
         # (batch_size, num_pixels, encoder_dim)
         num_pixels = encoder_out.size(1)
 
@@ -78,7 +74,7 @@ class Decoder(Module):
         encoded_captions = encoded_captions[sort_ind]
 
         embeddings = self.embedding(encoded_captions)
-        # (batch_size, max_caption_length, embed_dim)
+        # (batch_size, max_caption_length, embedding_dim)
 
         # Initialize LSTM state
         hidden_state, cell_state = self.init_hidden_state(encoder_out)

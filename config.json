@@ -1,0 +1,19 @@
+{
+  "seed": 42,
+  "epochs": 100,
+  "eval_interval": 5,
+  "save_interval": 25,
+  "batch_size": 32,
+  "encoder_lr": 1e-4,
+  "decoder_lr": 4e-4,
+  "image_size": [224, 224],
+  "encoded_image_size": [14, 14],
+  "finetune_encoder": true,
+  "embedding_dim": 512,
+  "attention_dim": 512,
+  "encoder_dim": 2048,
+  "decoder_dim": 512,
+  "dropout": 0.5,
+  "grad_clip": 5.0,
+  "alpha_c": 1.0
+}

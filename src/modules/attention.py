@@ -7,12 +7,10 @@ from torch.nn import Module, Linear, ReLU, Softmax
 class Attention(Module):
     def __init__(self, encoder_dim: int, decoder_dim: int, attention_dim: int) -> None:
         super(Attention).__init__()
-
         # linear layer to transform the encoded image
         self.encoder_attn = Linear(encoder_dim, attention_dim)
         # linear layer to transform decoder's output
         self.decoder_attn = Linear(decoder_dim, attention_dim)
-
         # linear layer to calculate logits
         self.full_attn = Linear(attention_dim, 1)
 

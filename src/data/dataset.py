@@ -9,12 +9,14 @@ from torchvision.transforms import Compose, ToTensor, Resize
 
 from src.data.tokenizer import Tokenizer
 from src.paths import DATASET_DIR
+from src.utils import load_config
 
 
 class RSICDDataset(Dataset):
     def __init__(self, split: str) -> None:
         super(Dataset).__init__()
-        self.data = RSICD(DATASET_DIR, split, Compose([Resize((224, 224)), ToTensor()]))
+        config = load_config()
+        self.data = RSICD(DATASET_DIR, split, Compose([Resize(config.image_size), ToTensor()]))
         self.tokenizer = Tokenizer(self.data)
 
     def __len__(self) -> int:
