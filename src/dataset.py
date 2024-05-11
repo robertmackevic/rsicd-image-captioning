@@ -1,6 +1,8 @@
-from typing import Tuple
+from typing import Tuple, List
 
+import torch
 from torch import Tensor
+from torch.nn import functional
 from torch.utils.data import Dataset
 from torchrs.datasets import RSICD
 from torchvision.transforms import Compose, ToTensor, Resize
@@ -27,3 +29,14 @@ class RSICDDataset(Dataset):
             for encoded in encoded_captions
         ])
         return image, encoded_and_padded_captions
+
+    def collate_fn(self, batch: List[Tensor]) -> Tuple[Tensor, Tensor]:
+        images, captions_batch = zip(*batch)
+        max_caption_length = max(caption.size(1) for caption in captions_batch)
+
+        padded_captions_batch = torch.stack([
+            functional.pad(captions, (0, max_caption_length - captions.size(1)), value=self.tokenizer.pad_id)
+            for captions in captions_batch
+        ], dim=0)
+
+        return torch.stack(images, dim=0), padded_captions_batch
