@@ -12,6 +12,7 @@ class Vocab:
     UNK_ID = 1
     SOS_ID = 2
     EOS_ID = 3
+    SPECIAL_IDS = [PAD_ID, UNK_ID, SOS_ID, EOS_ID]
 
     def __init__(self, token_to_id: Dict[str, int]) -> None:
         self.token_to_id = token_to_id

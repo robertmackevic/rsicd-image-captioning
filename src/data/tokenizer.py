@@ -26,7 +26,7 @@ class Tokenizer:
         return [Vocab.SOS_ID] + encoded + [Vocab.EOS_ID]
 
     def decode(self, ids: List[int]) -> str:
-        return " ".join([self.vocab.id_to_token.get(_id) for _id in ids][1:-1])
+        return " ".join([self.vocab.id_to_token.get(_id) for _id in ids if _id not in Vocab.SPECIAL_IDS])
 
     def save(self, filepath: Path) -> None:
         with open(filepath, "w") as file:

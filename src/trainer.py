@@ -1,8 +1,10 @@
-import statistics
 from argparse import Namespace
 from os import listdir, makedirs
-from typing import List, Optional
+from typing import Optional, Dict, Tuple
 
+import torch
+from nltk.translate.bleu_score import corpus_bleu
+from torch import Tensor, no_grad
 from torch.nn import CrossEntropyLoss
 from torch.nn.utils import clip_grad_value_
 from torch.nn.utils.rnn import pack_padded_sequence
@@ -12,6 +14,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
 from src.data.tokenizer import Tokenizer
+from src.metrics import AverageMeter, compute_topk_accuracy
 from src.modules.model import EncoderDecoderCaptioning
 from src.paths import RUNS_DIR
 from src.utils import get_available_device, get_logger, save_config, save_weights
@@ -49,38 +52,39 @@ class Trainer:
         save_config(self.config, model_dir / "config.json")
         self.tokenizer.save(model_dir / "tokenizer.json")
 
+        best_score = 0
+        best_score_metric = self.config.best_score_metric
+
         for epoch in range(1, self.config.epochs + 1):
-            losses = self._train_for_epoch(train_dl)
+            metrics = self._train_for_epoch(train_dl)
             self.logger.info(f"[Epoch {epoch} / {self.config.epochs}]")
-            self.log_losses(losses, summary_writer_train, epoch=epoch)
+            self.log_metrics(metrics, summary_writer_train, epoch=epoch)
 
             if epoch % self.config.eval_interval == 0:
                 self.logger.info("Evaluating...")
-                self.eval(val_dl)
+                metrics = self.eval(val_dl)
+                self.log_metrics(metrics, summary_writer_eval, epoch=epoch)
+
+                score = metrics[best_score_metric].avg
+
+                if score > best_score:
+                    best_score = score
+                    self.logger.info(f"Saving best weights with {best_score_metric}: {score:.3f}")
+                    save_weights(model_dir / "weights_best.pth", self.model)
 
             if epoch % self.config.save_interval == 0:
                 self.logger.info(f"Saving model weights at epoch: {epoch}")
                 save_weights(model_dir / f"weights_{epoch}.pth", self.model)
 
-    def _train_for_epoch(self, dataloader: DataLoader) -> List[float]:
+    def _train_for_epoch(self, dataloader: DataLoader) -> Dict[str, AverageMeter]:
         self.model.train()
-        losses = []
+        metrics = {
+            "loss": AverageMeter(),
+            "top5_accuracy": AverageMeter(),
+        }
 
         for batch in tqdm(dataloader):
-            images = batch[0].to(self.device)
-            captions = batch[1].to(self.device)
-            caption_lengths = batch[2].to(self.device)
-
-            predictions, sorted_captions, decode_lengths, alphas, _ = self.model(images, captions, caption_lengths)
-
-            targets = sorted_captions[:, 1:]
-            predictions = pack_padded_sequence(predictions, decode_lengths, batch_first=True)
-            targets = pack_padded_sequence(targets, decode_lengths, batch_first=True)
-
-            loss = self.loss_fn(predictions.data, targets.data)
-
-            # Add doubly stochastic attention regularization
-            loss += self.config.alpha_c * ((1. - alphas.sum(dim=1)) ** 2).mean()
+            _, decode_lengths, _, loss, top5_accuracy = self._forward(batch)
 
             self.decoder_optimizer.zero_grad()
             self.encoder_optimizer.zero_grad()
@@ -91,17 +95,74 @@ class Trainer:
             self.decoder_optimizer.step()
             self.encoder_optimizer.step()
 
-            losses.append(loss.item())
+            metrics["loss"].update(loss.item(), n=sum(decode_lengths))
+            metrics["top5_accuracy"].update(top5_accuracy, n=sum(decode_lengths))
 
-        return losses
+        return metrics
 
-    def eval(self, dataloader: DataLoader):
-        pass
+    def eval(self, dataloader: DataLoader) -> Dict[str, AverageMeter]:
+        self.model.eval()
+        metrics = {
+            "loss": AverageMeter(),
+            "top5_accuracy": AverageMeter(),
+            "bleu": AverageMeter()
+        }
 
-    def log_losses(self, losses: List[float], summary_writer: SummaryWriter, epoch: Optional[int] = None) -> None:
-        loss = statistics.mean(losses)
+        for batch in tqdm(dataloader):
+            with no_grad():
+                predictions, decode_lengths, sort_idx, loss, top5_accuracy = self._forward(batch)
 
-        if epoch is not None:
-            summary_writer.add_scalar(tag="loss", scalar_value=loss, global_step=epoch)
+            metrics["loss"].update(loss.item(), n=sum(decode_lengths))
+            metrics["top5_accuracy"].update(top5_accuracy, n=sum(decode_lengths))
 
-        self.logger.info(f"loss: {loss:.3f}")
+            all_captions = batch[3][sort_idx.cpu()]
+            metrics["bleu"].update(
+                corpus_bleu(
+                    list_of_references=[
+                        [self.tokenizer.decode(reference) for reference in all_captions[batch_idx].tolist()]
+                        for batch_idx in range(all_captions.size(0))
+                    ],
+                    hypotheses=[
+                        self.tokenizer.decode(hypothesis)
+                        for hypothesis in torch.max(predictions, dim=2).indices.tolist()
+                    ]
+                ),
+            )
+
+        return metrics
+
+    def _forward(self, batch: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor, float]:
+        images = batch[0].to(self.device)
+        captions = batch[1].to(self.device)
+        caption_lengths = batch[2].to(self.device)
+
+        predictions, sorted_captions, decode_lengths, alphas, sort_idx = (
+            self.model(images, captions, caption_lengths)
+        )
+
+        packed_predictions = pack_padded_sequence(predictions, decode_lengths, batch_first=True)
+        packed_targets = pack_padded_sequence(sorted_captions[:, 1:], decode_lengths, batch_first=True)
+
+        loss = self.loss_fn(packed_predictions.data, packed_targets.data)
+
+        # Add doubly stochastic attention regularization
+        loss += self.config.alpha_c * ((1. - alphas.sum(dim=1)) ** 2).mean()
+
+        top5_accuracy = compute_topk_accuracy(packed_predictions.data, packed_targets.data, k=5)
+
+        return predictions, decode_lengths, sort_idx, loss, top5_accuracy
+
+    def log_metrics(
+            self,
+            metrics: Dict[str, AverageMeter],
+            summary_writer: Optional[SummaryWriter] = None,
+            epoch: Optional[int] = None
+    ) -> None:
+        message = ""
+        for metric, value in metrics.items():
+            message += f"{metric}: {value.avg:.3f} | "
+
+            if epoch is not None and summary_writer is not None:
+                summary_writer.add_scalar(tag=metric, scalar_value=value.avg, global_step=epoch)
+
+        self.logger.info(message[:-3])

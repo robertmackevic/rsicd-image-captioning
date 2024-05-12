@@ -27,15 +27,15 @@ def run(zip_file: Path) -> None:
         extract_rsicd_dataset(zip_file)
 
     if TOKENIZER_FILE.is_file():
-        logger.info(f"Loading tokenizer from `{TOKENIZER_FILE}`.")
+        logger.info(f"Loading tokenizer from `{TOKENIZER_FILE}`...")
         tokenizer = Tokenizer.init_from_file()
     else:
-        logger.info(f"Tokenizer file not found. Initializing tokenizer from training data.")
+        logger.info(f"Tokenizer file not found. Initializing tokenizer from training data...")
         train_data = RSICD(DATASET_DIR, split="train")
         tokenizer = Tokenizer.init_from_data(train_data)
         tokenizer.save(TOKENIZER_FILE)
 
-    logger.info(f"Preparing the data.")
+    logger.info(f"Preparing the data...")
     train_dataset = RSICDDataset(config, tokenizer, split="train")
     val_dataset = RSICDDataset(config, tokenizer, split="val")
 
@@ -56,7 +56,11 @@ def run(zip_file: Path) -> None:
 
     trainer = Trainer(config, tokenizer)
     logger.info(f"Number of trainable parameters: {count_parameters(trainer.model, trainable=True)}")
-    trainer.fit(train_dl, val_dl)
+
+    try:
+        trainer.fit(train_dl, val_dl)
+    except KeyboardInterrupt:
+        logger.info("Training terminated.")
 
 
 if __name__ == "__main__":
