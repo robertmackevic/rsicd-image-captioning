@@ -61,7 +61,6 @@ class Trainer:
             self.log_metrics(metrics, summary_writer_train, epoch=epoch)
 
             if epoch % self.config.eval_interval == 0:
-                self.logger.info("Evaluating...")
                 metrics = self.eval(val_dl)
                 self.log_metrics(metrics, summary_writer_eval, epoch=epoch)
 
