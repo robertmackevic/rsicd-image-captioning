@@ -8,9 +8,9 @@ from src.modules.decoder import Decoder
 from src.modules.encoder import Encoder
 
 
-class EncoderDecoderCaptioning(Module):
+class Image2Text(Module):
     def __init__(self, config: Namespace, vocab_size: int) -> None:
-        super(EncoderDecoderCaptioning, self).__init__()
+        super(Image2Text, self).__init__()
         self.encoder = Encoder(config)
         self.decoder = Decoder(config, vocab_size)
 

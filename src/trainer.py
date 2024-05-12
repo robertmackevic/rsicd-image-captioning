@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from src.data.tokenizer import Tokenizer
 from src.metrics import AverageMeter, compute_topk_accuracy
-from src.modules.model import EncoderDecoderCaptioning
+from src.modules.model import Image2Text
 from src.paths import RUNS_DIR
 from src.utils import get_available_device, get_logger, save_config, save_weights
 
@@ -27,7 +27,7 @@ class Trainer:
         self.logger = get_logger(__name__)
 
         self.tokenizer = tokenizer
-        self.model = EncoderDecoderCaptioning(config, vocab_size=len(tokenizer.vocab)).to(self.device)
+        self.model = Image2Text(config, vocab_size=len(tokenizer.vocab)).to(self.device)
 
         self.encoder_optimizer = Adam(
             params=filter(lambda p: p.requires_grad, self.model.encoder.parameters()),

@@ -4,17 +4,17 @@ from typing import Tuple
 from torch import Tensor, LongTensor
 from torch.utils.data import Dataset
 from torchrs.datasets import RSICD
-from torchvision.transforms import Compose, ToTensor, Resize
 
 from src.data.tokenizer import Tokenizer
 from src.data.vocab import Vocab
+from src.inference import compose_image_transform
 from src.paths import DATASET_DIR
 
 
 class RSICDDataset(Dataset):
     def __init__(self, config: Namespace, tokenizer: Tokenizer, split: str) -> None:
         super(Dataset, self).__init__()
-        self.data = RSICD(DATASET_DIR, split, Compose([Resize(config.image_size), ToTensor()]))
+        self.data = RSICD(DATASET_DIR, split, compose_image_transform(config.image_size))
         self.tokenizer = tokenizer
         self.num_captions_per_image = len(self.data[0]["captions"])
 
