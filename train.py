@@ -9,7 +9,13 @@ from src.data.dataset import RSICDDataset
 from src.data.tokenizer import Tokenizer
 from src.paths import DATASET_DIR, TOKENIZER_FILE
 from src.trainer import Trainer
-from src.utils import get_logger, load_config, seed_everything, extract_rsicd_dataset, count_parameters
+from src.utils import (
+    get_logger,
+    load_config,
+    seed_everything,
+    extract_rsicd_dataset,
+    count_parameters
+)
 
 
 def parse_args() -> Namespace:
