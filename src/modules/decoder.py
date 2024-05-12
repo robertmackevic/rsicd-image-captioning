@@ -10,11 +10,11 @@ from src.utils import get_available_device
 
 
 class Decoder(Module):
-    def __init__(self, config: Namespace) -> None:
+    def __init__(self, config: Namespace, vocab_size: int) -> None:
         super(Decoder, self).__init__()
         self.device = get_available_device()
         self.encoder_dim = config.encoder_dim
-        self.vocab_size = config.vocab_size
+        self.vocab_size = vocab_size
 
         self.attention = Attention(self.encoder_dim, config.decoder_dim, config.attention_dim)
 

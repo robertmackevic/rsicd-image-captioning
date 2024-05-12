@@ -24,7 +24,7 @@ class Trainer:
         self.logger = get_logger(__name__)
 
         self.tokenizer = tokenizer
-        self.model = EncoderDecoderCaptioning(config).to(self.device)
+        self.model = EncoderDecoderCaptioning(config, vocab_size=len(tokenizer.vocab)).to(self.device)
 
         self.encoder_optimizer = Adam(
             params=filter(lambda p: p.requires_grad, self.model.encoder.parameters()),
@@ -68,12 +68,10 @@ class Trainer:
 
         for batch in tqdm(dataloader):
             images = batch[0].to(self.device)
-            all_captions = batch[1].to(self.device)
-            all_caption_lengths = batch[2].to(self.device)
+            captions = batch[1].to(self.device)
+            caption_lengths = batch[2].to(self.device)
 
-            captions = all_captions[:, 0, :]
-            caption_length = all_caption_lengths[:, 0].unsqueeze(1)
-            predictions, sorted_captions, decode_lengths, alphas, _ = self.model(images, captions, caption_length)
+            predictions, sorted_captions, decode_lengths, alphas, _ = self.model(images, captions, caption_lengths)
 
             targets = sorted_captions[:, 1:]
             predictions = pack_padded_sequence(predictions, decode_lengths, batch_first=True)

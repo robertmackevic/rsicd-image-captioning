@@ -16,18 +16,25 @@ class RSICDDataset(Dataset):
         super(Dataset, self).__init__()
         self.data = RSICD(DATASET_DIR, split, Compose([Resize(config.image_size), ToTensor()]))
         self.tokenizer = tokenizer
+        self.num_captions_per_image = len(self.data[0]["captions"])
 
     def __len__(self) -> int:
-        return len(self.data)
+        return len(self.data) * self.num_captions_per_image
 
-    def __getitem__(self, index: int) -> Tuple[Tensor, Tensor, Tensor]:
-        image = self.data[index]["x"]
-        encoded_captions = [self.tokenizer.encode(caption) for caption in self.data[index]["captions"]]
-        caption_lengths = [len(caption) for caption in encoded_captions]
-        max_length = max(caption_lengths)
+    def __getitem__(self, index: int) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+        image_idx = index // self.num_captions_per_image
+        image = self.data[image_idx]["x"]
 
-        encoded_and_padded_captions = Tensor([
-            encoded + [Vocab.PAD_ID] * (max_length - len(encoded))
-            for encoded in encoded_captions
+        all_encoded_captions = [self.tokenizer.encode(cap) for cap in self.data[image_idx]["captions"]]
+        max_caption_length = max(len(cap) for cap in all_encoded_captions)
+
+        caption_idx = index % self.num_captions_per_image
+        caption = LongTensor(all_encoded_captions[caption_idx])
+        caption_length = LongTensor([caption.size(0)])
+
+        all_captions = LongTensor([
+            cap + [Vocab.PAD_ID] * (max_caption_length - len(cap))
+            for cap in all_encoded_captions
         ])
-        return image, encoded_and_padded_captions, LongTensor(caption_lengths)
+
+        return image, caption, caption_length, all_captions

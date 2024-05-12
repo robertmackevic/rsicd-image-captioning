@@ -22,7 +22,7 @@ class Tokenizer:
             return cls(Vocab(json.load(file)))
 
     def encode(self, text: str) -> List[int]:
-        encoded = [self.vocab.token_to_id.get(token, Vocab.UNK_TOKEN) for token in text.split()]
+        encoded = [self.vocab.token_to_id.get(token, Vocab.UNK_ID) for token in text.split()]
         return [Vocab.SOS_ID] + encoded + [Vocab.EOS_ID]
 
     def decode(self, ids: List[int]) -> str:

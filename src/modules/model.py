@@ -9,10 +9,10 @@ from src.modules.encoder import Encoder
 
 
 class EncoderDecoderCaptioning(Module):
-    def __init__(self, config: Namespace) -> None:
+    def __init__(self, config: Namespace, vocab_size: int) -> None:
         super(EncoderDecoderCaptioning, self).__init__()
         self.encoder = Encoder(config)
-        self.decoder = Decoder(config)
+        self.decoder = Decoder(config, vocab_size)
 
     def forward(
             self,
