@@ -5,7 +5,7 @@ from typing import Tuple
 import requests
 from PIL import Image
 from matplotlib import pyplot as plt
-from torch import LongTensor
+from torch import LongTensor, no_grad
 from torchvision.transforms import Compose, ToTensor, Resize, Normalize
 
 from src.data.tokenizer import Tokenizer
@@ -50,21 +50,22 @@ class RSICDCaptionGenerator:
         return self.caption_image(Image.open(image_filepath))
 
     def caption_image(self, image: Image) -> str:
-        image_tensor = self.transform(image).unsqueeze(0).to(self.device)
-        encoder_output = self.model.encoder(image_tensor)
-        caption = [Vocab.SOS_ID, Vocab.EOS_ID]
+        with no_grad():
+            image_tensor = self.transform(image).unsqueeze(0).to(self.device)
+            encoder_output = self.model.encoder(image_tensor)
+            caption = [Vocab.SOS_ID, Vocab.EOS_ID]
 
-        while True:
-            caption_tensor = LongTensor(caption).unsqueeze(0).to(self.device)
-            length_tensor = LongTensor([len(caption)]).unsqueeze(0).to(self.device)
+            while True:
+                caption_tensor = LongTensor(caption).unsqueeze(0).to(self.device)
+                length_tensor = LongTensor([len(caption)]).unsqueeze(0).to(self.device)
 
-            prediction, _, _, _, _ = self.model.decoder(encoder_output, caption_tensor, length_tensor)
-            predicted_id = prediction.topk(1)[1].view(-1)[-1].item()
+                prediction, _, _, _, _ = self.model.decoder(encoder_output, caption_tensor, length_tensor)
+                predicted_id = prediction.topk(1)[1].view(-1)[-1].item()
 
-            if predicted_id == Vocab.EOS_ID:
-                break
+                if predicted_id == Vocab.EOS_ID:
+                    break
 
-            caption.insert(-1, predicted_id)
+                caption.insert(-1, predicted_id)
 
         decoded_caption = self.tokenizer.decode(caption)
 
