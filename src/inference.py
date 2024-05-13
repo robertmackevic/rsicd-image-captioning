@@ -97,7 +97,7 @@ class RSICDCaptionGenerator:
 
             plt.subplot(int(np.ceil(len(tokens) / 5)), 5, token_idx + 1)
             plt.text(0, 1, tokens[token_idx], color="black", backgroundcolor="white", fontsize=12)
-            plt.set_cmap(plt.get_cmap("gray_r"))
+            plt.set_cmap(plt.get_cmap("gray"))
             plt.axis("off")
             plt.imshow(image)
 

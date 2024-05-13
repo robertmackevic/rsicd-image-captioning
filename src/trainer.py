@@ -29,10 +29,12 @@ class Trainer:
         self.tokenizer = tokenizer
         self.model = Image2Text(config, vocab_size=len(tokenizer.vocab)).to(self.device)
 
-        self.encoder_optimizer = Adam(
-            params=filter(lambda p: p.requires_grad, self.model.encoder.parameters()),
-            lr=self.config.encoder_lr
-        )
+        if self.config.finetune_encoder:
+            self.encoder_optimizer = Adam(
+                params=filter(lambda p: p.requires_grad, self.model.encoder.parameters()),
+                lr=self.config.encoder_lr
+            )
+
         self.decoder_optimizer = Adam(
             params=self.model.decoder.parameters(),
             lr=self.config.decoder_lr
@@ -86,13 +88,16 @@ class Trainer:
             _, decode_lengths, _, loss, top5_accuracy = self._forward(batch)
 
             self.decoder_optimizer.zero_grad()
-            self.encoder_optimizer.zero_grad()
+            if self.config.finetune_encoder:
+                self.encoder_optimizer.zero_grad()
+
             loss.backward()
 
             clip_grad_value_(self.model.parameters(), self.config.grad_clip)
 
             self.decoder_optimizer.step()
-            self.encoder_optimizer.step()
+            if self.config.finetune_encoder:
+                self.encoder_optimizer.step()
 
             metrics["loss"].update(loss.item(), n=sum(decode_lengths))
             metrics["top5_accuracy"].update(top5_accuracy, n=sum(decode_lengths))
