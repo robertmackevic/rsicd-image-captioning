@@ -12,7 +12,7 @@ class Image2Text(Module):
     def __init__(self, config: Namespace, vocab_size: int) -> None:
         super(Image2Text, self).__init__()
         self.encoder = Encoder(config)
-        self.decoder = Decoder(config, vocab_size)
+        self.decoder = Decoder(config, vocab_size, self.encoder.encoder_dim)
 
     def forward(
             self,
