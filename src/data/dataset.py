@@ -25,16 +25,24 @@ class RSICDDataset(Dataset):
         image_idx = index // self.num_captions_per_image
         image = self.data[image_idx]["x"]
 
-        all_encoded_captions = [self.tokenizer.encode(cap) for cap in self.data[image_idx]["captions"]]
-        max_caption_length = max(len(cap) for cap in all_encoded_captions)
-
+        all_captions = [self.tokenizer.encode(cap) for cap in self.data[image_idx]["captions"]]
         caption_idx = index % self.num_captions_per_image
-        caption = LongTensor(all_encoded_captions[caption_idx])
+        caption = all_captions[caption_idx]
+
+        if Vocab.UNK_ID in caption:
+            # We assume that there's at least one caption that does not contain UNK tokens for an image.
+            # This is true for the RSCID dataset.
+            valid_captions = [cap for cap in all_captions if Vocab.UNK_ID not in cap]
+            caption = valid_captions[0]
+            all_captions = valid_captions + [caption] * (self.num_captions_per_image - len(valid_captions))
+
+        caption = LongTensor(caption)
         caption_length = LongTensor([caption.size(0)])
 
+        max_caption_length = max(len(cap) for cap in all_captions)
         all_captions = LongTensor([
             cap + [Vocab.PAD_ID] * (max_caption_length - len(cap))
-            for cap in all_encoded_captions
+            for cap in all_captions
         ])
 
         return image, caption, caption_length, all_captions
