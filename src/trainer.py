@@ -31,6 +31,13 @@ class AverageMeter:
 
 
 class Trainer:
+    BLEU_WEIGHTS = [
+        (1.0,),
+        (0.5, 0.5),
+        (0.333, 0.333, 0.334),
+        (0.25, 0.25, 0.25, 0.25),
+    ]
+
     def __init__(self, config: Namespace, tokenizer: Tokenizer) -> None:
         self.config = config
         self.device = get_available_device()
@@ -116,7 +123,10 @@ class Trainer:
         self.model.eval()
         metrics = {
             "loss": AverageMeter(),
-            "bleu": AverageMeter()
+            "bleu/bleu1": AverageMeter(),
+            "bleu/bleu2": AverageMeter(),
+            "bleu/bleu3": AverageMeter(),
+            "bleu/bleu4": AverageMeter(),
         }
 
         for batch in tqdm(dataloader):
@@ -126,18 +136,21 @@ class Trainer:
             all_captions = batch[3][sort_idx.cpu()] if self.model.decoder_type == "lstm" else batch[3]
             metrics["loss"].update(loss.item())
 
-            metrics["bleu"].update(
-                corpus_bleu(
-                    list_of_references=[
-                        [self.tokenizer.decode(reference) for reference in all_captions[batch_idx].tolist()]
-                        for batch_idx in range(all_captions.size(0))
-                    ],
-                    hypotheses=[
-                        self.tokenizer.decode(hypothesis)
-                        for hypothesis in torch.max(predictions, dim=2).indices.tolist()
-                    ]
-                ),
+            bleu1, bleu2, bleu3, bleu4 = corpus_bleu(
+                list_of_references=[
+                    [self.tokenizer.decode(reference) for reference in all_captions[batch_idx].tolist()]
+                    for batch_idx in range(all_captions.size(0))
+                ],
+                hypotheses=[
+                    self.tokenizer.decode(hypothesis)
+                    for hypothesis in torch.max(predictions, dim=2).indices.tolist()
+                ],
+                weights=self.BLEU_WEIGHTS,
             )
+            metrics["bleu/bleu1"].update(bleu1)
+            metrics["bleu/bleu2"].update(bleu2)
+            metrics["bleu/bleu3"].update(bleu3)
+            metrics["bleu/bleu4"].update(bleu4)
 
         return metrics
 
