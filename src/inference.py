@@ -7,9 +7,9 @@ import requests
 import skimage
 from PIL import Image
 from matplotlib import pyplot as plt
-from torch import LongTensor, no_grad, Tensor
+from torch import LongTensor, no_grad, Tensor, log_softmax
 from torch.nn import Module
-from torchvision.transforms import Compose, ToTensor, Resize, Normalize
+from torchvision.transforms import Compose, ToTensor, Resize, Normalize, ToPILImage
 
 from src.data.tokenizer import Tokenizer
 from src.data.vocab import Vocab
@@ -58,6 +58,7 @@ class RSICDCaptionGenerator:
         self.model.eval()
 
         self.transform = compose_image_transform(self.config.image_size)
+        self.transform_to_PIL = ToPILImage(mode="RGB")
 
         if self.model.decoder_type == "transformer":
             self.decoder_module = self.model.decoder.decoder
@@ -68,18 +69,28 @@ class RSICDCaptionGenerator:
                 self._enable_transformer_attention_outputs(attention_layer)
                 attention_layer.register_forward_hook(self.output_buffers[i])
 
-    def caption_image_from_url(self, url: str, show_attention: bool = False) -> str:
-        return self.caption_image(Image.open(BytesIO(requests.get(url).content)), show_attention)
+    def caption_image_from_url(self, url: str, top_k: int = 1, show_attention: bool = False) -> str:
+        return self.caption_image(Image.open(BytesIO(requests.get(url).content)), top_k, show_attention)
 
-    def caption_image_from_file(self, image_filepath: Path, show_attention: bool = False) -> str:
-        return self.caption_image(Image.open(image_filepath), show_attention)
+    def caption_image_from_file(self, image_filepath: Path, top_k: int = 1, show_attention: bool = False) -> str:
+        return self.caption_image(Image.open(image_filepath), top_k, show_attention)
 
-    def caption_image(self, image: Image, show_attention: bool = False) -> str:
+    def caption_image_from_tensor(self, tensor: Tensor, top_k: int = 1, show_attention: bool = False) -> str:
+        return self.caption_image(self.transform_to_PIL(tensor), top_k, show_attention)
+
+    def caption_image(self, image: Image, top_k: int = 1, show_attention: bool = False) -> str:
+        if top_k < 1:
+            raise ValueError("top_k must be greater than 0")
+
         with no_grad():
             encoder_output = self.model.encoder(self.transform(image).unsqueeze(0).to(self.device))
 
         if self.model.decoder_type == "transformer":
-            token_ids = self._greedy_inference_with_decoder_transformer(encoder_output)
+            token_ids = (
+                self._greedy_inference_with_decoder_transformer(encoder_output)
+                if top_k == 1
+                else self._beam_search_inference_with_decoder_transformer(encoder_output, top_k)
+            )
             caption = self.tokenizer.decode(token_ids)
             self._show_image(image, caption)
 
@@ -87,7 +98,11 @@ class RSICDCaptionGenerator:
                 self._visualize_transformer_attention(image, token_ids)
 
         elif self.model.decoder_type == "lstm":
-            token_ids, alpha = self._greedy_inference_with_decoder_lstm(encoder_output)
+            token_ids, alpha = (
+                self._greedy_inference_with_decoder_lstm(encoder_output)
+                if top_k == 1
+                else self._beam_search_inference_with_lstm_transformer(encoder_output, top_k)
+            )
             caption = self.tokenizer.decode(token_ids)
             self._show_image(image, caption)
 
@@ -134,13 +149,70 @@ class RSICDCaptionGenerator:
 
         return caption
 
-    @staticmethod
-    def _show_image(image: Image, title: str) -> None:
-        plt.figure(figsize=(8, 8))
-        plt.imshow(image)
-        plt.axis("off")
-        plt.title(title)
-        plt.show()
+    def _beam_search_inference_with_decoder_transformer(self, enc_output: Tensor, top_k: int) -> List[int]:
+        beam = [(0, [Vocab.SOS_ID])]
+
+        while True:
+            candidates = []
+            for score, sequence in beam:
+
+                if sequence[-1] == Vocab.EOS_ID:
+                    candidates.append((score, sequence))
+                    continue
+
+                caption_tensor = LongTensor(sequence).unsqueeze(0).to(self.device)
+
+                with no_grad():
+                    prediction = self.model.decoder(enc_output, caption_tensor)
+                    log_probs = log_softmax(prediction[0, -1], dim=-1)
+
+                top_k_log_probs, top_k_indices = log_probs.topk(top_k)
+
+                for i in range(top_k):
+                    next_score = score + top_k_log_probs[i].item()
+                    next_seq = sequence + [top_k_indices[i].item()]
+                    candidates.append((next_score, next_seq))
+
+            beam = sorted(candidates, key=lambda x: x[0], reverse=True)[:top_k]
+
+            if all(seq[-1] == Vocab.EOS_ID for _, seq in beam):
+                break
+
+        return beam[0][1]
+
+    def _beam_search_inference_with_lstm_transformer(self, enc_output: Tensor, top_k: int) -> Tuple[List[int], Tensor]:
+        beam = [(0, [Vocab.SOS_ID, Vocab.EOS_ID], [])]
+
+        while True:
+            candidates = []
+            for score, sequence, alphas in beam:
+
+                if sequence[-2] == Vocab.EOS_ID:
+                    candidates.append((score, sequence, alphas))
+                    continue
+
+                caption_tensor = LongTensor(sequence).unsqueeze(0).to(self.device)
+                length_tensor = LongTensor([len(sequence)]).unsqueeze(0).to(self.device)
+
+                with no_grad():
+                    prediction, _, alpha, _ = self.model.decoder(enc_output, caption_tensor, length_tensor)
+                    log_probs = log_softmax(prediction[0, -1], dim=-1)
+
+                alphas.append(alpha)
+                top_k_log_probs, top_k_indices = log_probs.topk(top_k)
+
+                for i in range(top_k):
+                    next_score = score + top_k_log_probs[i].item()
+                    next_seq = sequence[:-1] + [top_k_indices[i].item()] + [Vocab.EOS_ID]
+                    next_alphas = alphas + [alpha]
+                    candidates.append((next_score, next_seq, next_alphas))
+
+            beam = sorted(candidates, key=lambda x: x[0], reverse=True)[:top_k]
+
+            if all(seq[-2] == Vocab.EOS_ID for _, seq, _ in beam):
+                break
+
+        return beam[0][1], beam[0][2][-1]
 
     def _visualize_attention(self, image: Image, token_ids: List[int], alpha: Tensor) -> None:
         tokens = [self.tokenizer.vocab.id_to_token.get(_id, Vocab.UNK_ID) for _id in token_ids]
@@ -178,6 +250,14 @@ class RSICDCaptionGenerator:
 
         for buffer in self.output_buffers:
             buffer.clear()
+
+    @staticmethod
+    def _show_image(image: Image, title: str) -> None:
+        plt.figure(figsize=(8, 8))
+        plt.imshow(image)
+        plt.axis("off")
+        plt.title(title)
+        plt.show()
 
     @staticmethod
     def _enable_transformer_attention_outputs(module: Module) -> None:

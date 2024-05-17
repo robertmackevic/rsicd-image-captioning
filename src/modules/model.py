@@ -19,7 +19,7 @@ class Image2Text(Module):
             self.decoder = LSTMDecoder(config, vocab_size, self.encoder.encoder_dim)
 
         elif self.decoder_type == "transformer":
-            self.decoder = TransformerDecoder(config, vocab_size, self.encoder.encoder_dim)
+            self.decoder = TransformerDecoder(config, vocab_size)
 
         else:
             raise ValueError(f"Unknown decoder type: `{self.decoder_type}`")

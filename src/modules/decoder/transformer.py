@@ -13,11 +13,9 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 
 class TransformerDecoder(nn.Module):
-    def __init__(self, config: Namespace, vocab_size: int, encoder_dim: int) -> None:
+    def __init__(self, config: Namespace, vocab_size: int) -> None:
         super(TransformerDecoder, self).__init__()
         config = Namespace(**config.transformer)
-        self.encoder_dim = encoder_dim
-        self.vocab_size = vocab_size
         self.device = get_available_device()
 
         self.embedding = nn.Embedding(vocab_size, config.embedding_dim)
