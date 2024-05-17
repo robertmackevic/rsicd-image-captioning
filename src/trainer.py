@@ -7,17 +7,27 @@ from nltk.translate.bleu_score import corpus_bleu
 from torch import Tensor, no_grad
 from torch.nn import CrossEntropyLoss
 from torch.nn.utils import clip_grad_value_
-from torch.nn.utils.rnn import pack_padded_sequence
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
 from src.data.tokenizer import Tokenizer
-from src.metrics import AverageMeter, compute_topk_accuracy
 from src.modules.model import Image2Text
 from src.paths import RUNS_DIR
 from src.utils import get_available_device, get_logger, save_config, save_weights
+
+
+class AverageMeter:
+    def __init__(self):
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, value: float, n: int = 1):
+        self.sum += value * n
+        self.count += n
+        self.avg = self.sum / self.count
 
 
 class Trainer:
@@ -81,11 +91,10 @@ class Trainer:
         self.model.train()
         metrics = {
             "loss": AverageMeter(),
-            "top5_accuracy": AverageMeter(),
         }
 
         for batch in tqdm(dataloader):
-            _, decode_lengths, _, loss, top5_accuracy = self._forward(batch)
+            loss, _, _ = self._forward(batch)
 
             self.decoder_optimizer.zero_grad()
             if self.config.finetune_encoder:
@@ -99,8 +108,7 @@ class Trainer:
             if self.config.finetune_encoder:
                 self.encoder_optimizer.step()
 
-            metrics["loss"].update(loss.item(), n=sum(decode_lengths))
-            metrics["top5_accuracy"].update(top5_accuracy, n=sum(decode_lengths))
+            metrics["loss"].update(loss.item())
 
         return metrics
 
@@ -108,18 +116,16 @@ class Trainer:
         self.model.eval()
         metrics = {
             "loss": AverageMeter(),
-            "top5_accuracy": AverageMeter(),
             "bleu": AverageMeter()
         }
 
         for batch in tqdm(dataloader):
             with no_grad():
-                predictions, decode_lengths, sort_idx, loss, top5_accuracy = self._forward(batch)
+                loss, predictions, sort_idx = self._forward(batch)
 
-            metrics["loss"].update(loss.item(), n=sum(decode_lengths))
-            metrics["top5_accuracy"].update(top5_accuracy, n=sum(decode_lengths))
+            all_captions = batch[3][sort_idx.cpu()] if self.model.decoder_type == "lstm" else batch[3]
+            metrics["loss"].update(loss.item())
 
-            all_captions = batch[3][sort_idx.cpu()]
             metrics["bleu"].update(
                 corpus_bleu(
                     list_of_references=[
@@ -135,26 +141,34 @@ class Trainer:
 
         return metrics
 
-    def _forward(self, batch: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor, float]:
+    def _forward(self, batch: Tensor) -> Tuple[Tensor, Tensor, Optional[Tensor]]:
         images = batch[0].to(self.device)
         captions = batch[1].to(self.device)
-        caption_lengths = batch[2].to(self.device)
 
-        predictions, sorted_captions, decode_lengths, alphas, sort_idx = (
-            self.model(images, captions, caption_lengths)
-        )
+        loss, predictions, targets, alphas, sort_idx = None, None, None, None, None
 
-        packed_predictions = pack_padded_sequence(predictions, decode_lengths, batch_first=True)
-        packed_targets = pack_padded_sequence(sorted_captions[:, 1:], decode_lengths, batch_first=True)
+        if self.model.decoder_type == "lstm":
+            caption_lengths = batch[2].to(self.device)
 
-        loss = self.loss_fn(packed_predictions.data, packed_targets.data)
+            predictions, sorted_captions, alphas, sort_idx = (
+                self.model(images, captions, caption_lengths)
+            )
+            targets = sorted_captions[:, 1:]
 
-        # Add doubly stochastic attention regularization
-        loss += self.config.alpha_c * ((1. - alphas.sum(dim=1)) ** 2).mean()
+        elif self.model.decoder_type == "transformer":
+            predictions = self.model(images, captions[:, :-1])
+            targets = captions[:, 1:]
 
-        top5_accuracy = compute_topk_accuracy(packed_predictions.data, packed_targets.data, k=5)
+        else:
+            raise ValueError(f"Unknown decoder type: `{self.model.decoder_type}`")
 
-        return predictions, decode_lengths, sort_idx, loss, top5_accuracy
+        loss = self.loss_fn(predictions.permute(0, 2, 1), targets)
+
+        if self.model.decoder_type == "lstm":
+            # Add doubly stochastic attention regularization
+            loss += self.model.decoder.alpha_c * ((1. - alphas.sum(dim=1)) ** 2).mean()
+
+        return loss, predictions, sort_idx
 
     def log_metrics(
             self,
