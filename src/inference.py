@@ -41,18 +41,6 @@ class OutputBuffer:
         self.outputs = []
 
 
-def _enable_transformer_attention_outputs(module: Module) -> None:
-    forward_method = module.forward
-
-    def wrap(*args, **kwargs):
-        kwargs["need_weights"] = True
-        kwargs["average_attn_weights"] = False
-
-        return forward_method(*args, **kwargs)
-
-    module.forward = wrap
-
-
 class RSICDCaptionGenerator:
     def __init__(
             self,
@@ -77,7 +65,7 @@ class RSICDCaptionGenerator:
 
             for i, layer in enumerate(self.decoder_module.layers):
                 attention_layer = getattr(layer, "multihead_attn")
-                _enable_transformer_attention_outputs(attention_layer)
+                self._enable_transformer_attention_outputs(attention_layer)
                 attention_layer.register_forward_hook(self.output_buffers[i])
 
     def caption_image_from_url(self, url: str, show_attention: bool = False) -> str:
@@ -96,7 +84,7 @@ class RSICDCaptionGenerator:
             self._show_image(image, caption)
 
             if show_attention:
-                self._visualize_transformer_attention()
+                self._visualize_transformer_attention(image, token_ids)
 
         elif self.model.decoder_type == "lstm":
             token_ids, alpha = self._greedy_inference_with_decoder_lstm(encoder_output)
@@ -104,7 +92,7 @@ class RSICDCaptionGenerator:
             self._show_image(image, caption)
 
             if show_attention:
-                self._visualize_lstm_attention(image, token_ids, alpha)
+                self._visualize_attention(image, token_ids, alpha)
         else:
             raise ValueError(f"Unknown decoder type: `{self.model.decoder_type}`")
 
@@ -139,11 +127,10 @@ class RSICDCaptionGenerator:
                 prediction = self.model.decoder(encoder_output, caption_tensor)
 
             predicted_id = prediction.topk(1)[1].view(-1)[-1].item()
+            caption.append(predicted_id)
 
             if predicted_id == Vocab.EOS_ID:
                 break
-
-            caption.append(predicted_id)
 
         return caption
 
@@ -155,7 +142,7 @@ class RSICDCaptionGenerator:
         plt.title(title)
         plt.show()
 
-    def _visualize_lstm_attention(self, image: Image, token_ids: List[int], alpha: Tensor) -> None:
+    def _visualize_attention(self, image: Image, token_ids: List[int], alpha: Tensor) -> None:
         tokens = [self.tokenizer.vocab.id_to_token.get(_id, Vocab.UNK_ID) for _id in token_ids]
 
         plt.figure(figsize=(16, 8))
@@ -181,6 +168,25 @@ class RSICDCaptionGenerator:
 
         plt.show()
 
-    def _visualize_transformer_attention(self) -> None:
+    def _visualize_transformer_attention(self, image: Image, token_ids: List[int]) -> None:
+        alpha = [
+            self.output_buffers[layer_idx].outputs[-1].mean(dim=0)
+            for layer_idx in range(self.decoder_module.num_layers)
+        ][-1].unsqueeze(0)
+
+        self._visualize_attention(image, token_ids, alpha)
+
         for buffer in self.output_buffers:
             buffer.clear()
+
+    @staticmethod
+    def _enable_transformer_attention_outputs(module: Module) -> None:
+        forward_method = module.forward
+
+        def wrap(*args, **kwargs):
+            kwargs["need_weights"] = True
+            kwargs["average_attn_weights"] = False
+
+            return forward_method(*args, **kwargs)
+
+        module.forward = wrap
