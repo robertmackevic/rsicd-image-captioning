@@ -101,7 +101,7 @@ class RSICDCaptionGenerator:
             token_ids, alpha = (
                 self._greedy_inference_with_decoder_lstm(encoder_output)
                 if top_k == 1
-                else self._beam_search_inference_with_lstm_transformer(encoder_output, top_k)
+                else self._beam_search_inference_with_decoder_lstm(encoder_output, top_k)
             )
             caption = self.tokenizer.decode(token_ids)
             self._show_image(image, caption)
@@ -180,7 +180,7 @@ class RSICDCaptionGenerator:
 
         return beam[0][1]
 
-    def _beam_search_inference_with_lstm_transformer(self, enc_output: Tensor, top_k: int) -> Tuple[List[int], Tensor]:
+    def _beam_search_inference_with_decoder_lstm(self, enc_output: Tensor, top_k: int) -> Tuple[List[int], Tensor]:
         beam = [(0, [Vocab.SOS_ID, Vocab.EOS_ID], [])]
 
         while True:
