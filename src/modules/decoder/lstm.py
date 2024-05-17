@@ -5,16 +5,18 @@ import torch
 from torch import Tensor
 from torch.nn import Module, Embedding, Dropout, LSTMCell, Linear, Sigmoid
 
-from src.modules.attention import Attention
+from src.modules.decoder.attention import Attention
 from src.utils import get_available_device
 
 
-class Decoder(Module):
+class LSTMDecoder(Module):
     def __init__(self, config: Namespace, vocab_size: int, encoder_dim: int) -> None:
-        super(Decoder, self).__init__()
+        super(LSTMDecoder, self).__init__()
+        config = Namespace(**config.lstm)
         self.device = get_available_device()
         self.encoder_dim = encoder_dim
         self.vocab_size = vocab_size
+        self.alpha_c = config.alpha_c
 
         self.attention = Attention(self.encoder_dim, config.decoder_dim, config.attention_dim)
 
@@ -58,7 +60,7 @@ class Decoder(Module):
             encoder_output: Tensor,
             encoded_captions: Tensor,
             caption_lengths: Tensor
-    ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """
         :param encoder_output: encoded images (batch_size, enc_image_size, enc_image_size, encoder_dim)
         :param encoded_captions: encoded captions (batch_size, max_caption_length)
@@ -73,7 +75,7 @@ class Decoder(Module):
         # (batch_size, num_pixels, encoder_dim)
         num_pixels = encoder_out.size(1)
 
-        # Sort input data by decreasing lengths; why? apparent below
+        # Sort input data by decreasing lengths
         caption_lengths, sort_idx = caption_lengths.squeeze(1).sort(dim=0, descending=True)
         encoder_out = encoder_out[sort_idx]
         encoded_captions = encoded_captions[sort_idx]
@@ -116,4 +118,4 @@ class Decoder(Module):
             predictions[:batch_size_t, t, :] = pred
             alphas[:batch_size_t, t, :] = alpha
 
-        return predictions, encoded_captions, decode_lengths, alphas, sort_idx
+        return predictions, encoded_captions, alphas, sort_idx

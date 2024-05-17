@@ -69,5 +69,5 @@ class Encoder(Module):
         # (batch_size, 2048, encoded_image_size, encoded_image_size)
 
         x = x.permute(0, 2, 3, 1)
-        # Output: (batch_size, encoded_image_size, encoded_image_size, 2048)
+        # Output: (batch_size, encoded_image_size, encoded_image_size, encoder_dim)
         return x
