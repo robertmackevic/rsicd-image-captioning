@@ -1,9 +1,13 @@
+import statistics
 from argparse import Namespace
 from os import listdir, makedirs
 from typing import Optional, Dict, Tuple
 
+import nltk
 import torch
 from nltk.translate.bleu_score import corpus_bleu
+from nltk.translate.meteor_score import meteor_score
+from rouge import Rouge
 from torch import Tensor, no_grad
 from torch.nn import CrossEntropyLoss
 from torch.nn.utils import clip_grad_value_
@@ -39,6 +43,8 @@ class Trainer:
     ]
 
     def __init__(self, config: Namespace, tokenizer: Tokenizer) -> None:
+        nltk.download("wordnet", quiet=True)
+
         self.config = config
         self.device = get_available_device()
         self.logger = get_logger(__name__)
@@ -58,6 +64,7 @@ class Trainer:
         )
 
         self.loss_fn = CrossEntropyLoss().to(self.device)
+        self.rouge = Rouge(metrics=["rouge-l"], stats=["f"])
 
     def fit(self, train_dl: DataLoader, val_dl: DataLoader) -> None:
         RUNS_DIR.mkdir(exist_ok=True)
@@ -123,10 +130,12 @@ class Trainer:
         self.model.eval()
         metrics = {
             "loss": AverageMeter(),
-            "bleu/bleu1": AverageMeter(),
-            "bleu/bleu2": AverageMeter(),
-            "bleu/bleu3": AverageMeter(),
-            "bleu/bleu4": AverageMeter(),
+            "metric/bleu1": AverageMeter(),
+            "metric/bleu2": AverageMeter(),
+            "metric/bleu3": AverageMeter(),
+            "metric/bleu4": AverageMeter(),
+            "metric/meteor": AverageMeter(),
+            "metric/rouge-l": AverageMeter(),
         }
 
         for batch in tqdm(dataloader):
@@ -136,21 +145,41 @@ class Trainer:
             all_captions = batch[3][sort_idx.cpu()] if self.model.decoder_type == "lstm" else batch[3]
             metrics["loss"].update(loss.item())
 
+            list_of_references = [
+                [self.tokenizer.decode(reference) for reference in all_captions[batch_idx].tolist()]
+                for batch_idx in range(all_captions.size(0))
+            ]
+            hypotheses = [
+                self.tokenizer.decode(hypothesis)
+                for hypothesis in torch.max(predictions, dim=2).indices.tolist()
+            ]
+
             bleu1, bleu2, bleu3, bleu4 = corpus_bleu(
-                list_of_references=[
-                    [self.tokenizer.decode(reference) for reference in all_captions[batch_idx].tolist()]
-                    for batch_idx in range(all_captions.size(0))
-                ],
-                hypotheses=[
-                    self.tokenizer.decode(hypothesis)
-                    for hypothesis in torch.max(predictions, dim=2).indices.tolist()
-                ],
+                list_of_references=list_of_references,
+                hypotheses=hypotheses,
                 weights=self.BLEU_WEIGHTS,
             )
-            metrics["bleu/bleu1"].update(bleu1)
-            metrics["bleu/bleu2"].update(bleu2)
-            metrics["bleu/bleu3"].update(bleu3)
-            metrics["bleu/bleu4"].update(bleu4)
+
+            meteor = statistics.mean(
+                meteor_score([reference.split() for reference in list_of_references[idx]], hypothesis.split())
+                for idx, hypothesis in enumerate(hypotheses)
+            )
+
+            rouge_l = statistics.mean(
+                self.rouge.get_scores(
+                    hypotheses,
+                    [references[i] for references in list_of_references],
+                    avg=True,
+                )["rouge-l"]["f"]
+                for i in range(all_captions.size(1))
+            )
+
+            metrics["metric/bleu1"].update(bleu1)
+            metrics["metric/bleu2"].update(bleu2)
+            metrics["metric/bleu3"].update(bleu3)
+            metrics["metric/bleu4"].update(bleu4)
+            metrics["metric/meteor"].update(meteor)
+            metrics["metric/rouge-l"].update(rouge_l)
 
         return metrics
 

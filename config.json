@@ -4,7 +4,7 @@
     "eval_interval": 1,
     "save_interval": 10,
     "batch_size": 64,
-    "best_score_metric": "bleu/bleu4",
+    "best_score_metric": "metric/bleu4",
     "encoder_lr": 1e-4,
     "decoder_lr": 1e-5,
     "grad_clip": 5.0,
