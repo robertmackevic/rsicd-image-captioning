@@ -15,14 +15,8 @@ class Image2Text(Module):
         self.encoder = Encoder(config)
         self.decoder_type = config.decoder
 
-        if self.decoder_type == "lstm":
-            self.decoder = LSTMDecoder(config, vocab_size, self.encoder.encoder_dim)
-
-        elif self.decoder_type == "transformer":
-            self.decoder = TransformerDecoder(config, vocab_size)
-
-        else:
-            raise ValueError(f"Unknown decoder type: `{self.decoder_type}`")
+        decoder = LSTMDecoder if self.decoder_type == "lstm" else TransformerDecoder
+        self.decoder = decoder(config, vocab_size, self.encoder.encoder_dim)
 
     def forward(
             self,

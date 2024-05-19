@@ -13,17 +13,17 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 
 class TransformerDecoder(nn.Module):
-    def __init__(self, config: Namespace, vocab_size: int) -> None:
+    def __init__(self, config: Namespace, vocab_size: int, encoder_dim: int) -> None:
         super(TransformerDecoder, self).__init__()
         config = Namespace(**config.transformer)
         self.device = get_available_device()
 
-        self.embedding = nn.Embedding(vocab_size, config.embedding_dim)
-        self.positional_encoding = PositionalEncoding(config.embedding_dim, config.max_len, config.dropout)
+        self.embedding = nn.Embedding(vocab_size, encoder_dim)
+        self.positional_encoding = PositionalEncoding(encoder_dim, config.max_len, config.dropout)
 
         self.decoder = nn.TransformerDecoder(
             decoder_layer=nn.TransformerDecoderLayer(
-                d_model=config.embedding_dim,
+                d_model=encoder_dim,
                 nhead=config.num_heads,
                 dropout=config.dropout,
                 batch_first=True
@@ -31,7 +31,7 @@ class TransformerDecoder(nn.Module):
             num_layers=config.num_layers,
         )
 
-        self.fc = nn.Linear(config.embedding_dim, vocab_size)
+        self.fc = nn.Linear(encoder_dim, vocab_size)
         self._init_weights()
 
     def _init_weights(self) -> None:
