@@ -7,10 +7,12 @@ from torchvision.models import (
     resnet34,
     resnet50,
     resnet101,
+    vgg16_bn,
     ResNet18_Weights,
     ResNet34_Weights,
     ResNet50_Weights,
     ResNet101_Weights,
+    VGG16_BN_Weights,
 )
 
 ENCODER_BACKBONE = {
@@ -34,6 +36,11 @@ ENCODER_BACKBONE = {
         "weights": ResNet101_Weights.DEFAULT,
         "encoder_dim": 2048,
     },
+    "vgg16_bn": {
+        "model": vgg16_bn,
+        "weights": VGG16_BN_Weights.DEFAULT,
+        "encoder_dim": 512,
+    }
 }
 
 
