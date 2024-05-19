@@ -225,19 +225,20 @@ class RSICDCaptionGenerator:
                 print("Too many generated tokens, stopping attention visualization.")
                 break
 
-            plt.subplot(int(np.ceil(len(tokens) / 5)), 5, token_idx + 1)
-            plt.text(0, 1, tokens[token_idx], color="black", backgroundcolor="white", fontsize=12)
-            plt.set_cmap(plt.get_cmap("gray"))
-            plt.axis("off")
-            plt.imshow(image)
+            if 0 < token_idx < len(tokens) - 1:
+                plt.subplot(int(np.ceil(len(tokens) / 5)), 5, token_idx)
+                plt.text(0, 1, tokens[token_idx], color="black", backgroundcolor="white", fontsize=12)
+                plt.set_cmap(plt.get_cmap("gray"))
+                plt.axis("off")
+                plt.imshow(image)
 
-            if token_idx != 0:
                 token_alpha = alpha[0:, token_idx - 1, :].view(1, *self.config.encoded_image_size).squeeze(0)
                 token_alpha = token_alpha.squeeze(0).cpu().numpy()
                 token_alpha = skimage.transform.pyramid_expand(token_alpha, upscale=upscale_factor, sigma=12)
                 # noinspection PyTypeChecker
                 plt.imshow(token_alpha, alpha=0.8)
 
+        plt.tight_layout()
         plt.show()
 
     def _visualize_transformer_attention(self, image: Image, token_ids: List[int]) -> None:
