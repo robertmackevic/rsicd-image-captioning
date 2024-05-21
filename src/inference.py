@@ -215,6 +215,7 @@ class RSICDCaptionGenerator:
         return beam[0][1], beam[0][2][-1]
 
     def _visualize_attention(self, image: Image, token_ids: List[int], alpha: Tensor) -> None:
+        image = image.resize(self.config.image_size)
         tokens = [self.tokenizer.vocab.id_to_token.get(_id, Vocab.UNK_ID) for _id in token_ids]
 
         plt.figure(figsize=(16, 8))
