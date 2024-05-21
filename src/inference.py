@@ -257,7 +257,7 @@ class RSICDCaptionGenerator:
         plt.figure(figsize=(8, 8))
         plt.imshow(image)
         plt.axis("off")
-        plt.title(title)
+        plt.title(title, fontsize=18)
         plt.show()
 
     @staticmethod
